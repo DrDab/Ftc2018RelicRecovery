@@ -60,14 +60,20 @@ public abstract class FtcOpMode extends LinearOpMode implements TrcRobot.RobotMo
     private final static String OPMODE_TELEOP   = "FtcTeleOp";
     private final static String OPMODE_TEST     = "FtcTest";
 
-    private final static long LOOP_PERIOD = 20;
+    protected final static int NUM_DASHBOARD_LINES = 16;
+    private final static long LOOP_PERIOD_NANO = 20000000;
     private static FtcOpMode instance = null;
-    private static double opModeStartTime = 0.0;
+    private static long opModeStartNanoTime = 0;
     private static double opModeElapsedTime = 0.0;
-    private static double loopStartTime = 0.0;
+    private static long loopStartNanoTime = 0;
     private static long loopCounter = 0;
 
     private TrcTaskMgr taskMgr;
+    private long periodicTotalNanoTime = 0;
+    private int periodicTimeSlotCount = 0;
+    private long continuousTotalNanoTime = 0;
+    private int continuousTimeSlotCount = 0;
+    private long sdkTotalNanoTime = 0;
 
     /**
      * Constructor: Creates an instance of the object. It calls the constructor of the LinearOpMode class and saves
@@ -153,7 +159,7 @@ public abstract class FtcOpMode extends LinearOpMode implements TrcRobot.RobotMo
      */
     public static double getOpModeElapsedTime()
     {
-        opModeElapsedTime = TrcUtil.getCurrentTime() - opModeStartTime;
+        opModeElapsedTime = (TrcUtil.getCurrentTimeNanos() - opModeStartNanoTime)/1000000000.0;
         return opModeElapsedTime;
     }   //getElapsedTime
 
@@ -165,7 +171,7 @@ public abstract class FtcOpMode extends LinearOpMode implements TrcRobot.RobotMo
      */
     public static double getLoopStartTime()
     {
-        return loopStartTime;
+        return loopStartNanoTime/1000000000.0;
     }   //getElapsedTime
 
     /**
@@ -228,14 +234,18 @@ public abstract class FtcOpMode extends LinearOpMode implements TrcRobot.RobotMo
     public void runOpMode()
     {
         final String funcName = "runOpMode";
-        HalDashboard dashboard = HalDashboard.createInstance(telemetry);
+        //
+        // Create dashboard here. If any earlier, telemetry may not exist yet.
+        //
+        HalDashboard dashboard = HalDashboard.createInstance(telemetry, NUM_DASHBOARD_LINES);
         TrcRobot.RunMode runMode;
 
         if (debugEnabled)
         {
             if (dbgTrace == null)
             {
-                dbgTrace = new TrcDbgTrace(moduleName, false, TrcDbgTrace.TraceLevel.API, TrcDbgTrace.MsgLevel.INFO);
+                dbgTrace = new TrcDbgTrace(
+                        moduleName, false, TrcDbgTrace.TraceLevel.API, TrcDbgTrace.MsgLevel.INFO);
             }
         }
 
@@ -267,7 +277,8 @@ public abstract class FtcOpMode extends LinearOpMode implements TrcRobot.RobotMo
         }
         else
         {
-            throw new IllegalStateException("Invalid OpMode (must be either FtcAuto, FtcTeleOp or FtcTest.");
+            throw new IllegalStateException(
+                    "Invalid OpMode, OpMode name must have prefix \"FtcAuto\", \"FtcTeleOp\" or \"FtcTest\".");
         }
 
         if (debugEnabled)
@@ -293,13 +304,16 @@ public abstract class FtcOpMode extends LinearOpMode implements TrcRobot.RobotMo
         {
             dbgTrace.traceInfo(funcName, "Running initPeriodic ...");
         }
+        loopCounter = 0;
         dashboard.displayPrintf(0, "initPeriodic starting...");
-        while (!opModeIsActive())
+        while (!isStarted())
         {
+            loopCounter++;
+            loopStartNanoTime = TrcUtil.getCurrentTimeNanos();
             initPeriodic();
         }
         dashboard.displayPrintf(0, "initPeriodic completed!");
-        opModeStartTime = TrcUtil.getCurrentTime();
+        opModeStartNanoTime = TrcUtil.getCurrentTimeNanos();
 
         //
         // Prepare for starting the run mode.
@@ -316,11 +330,16 @@ public abstract class FtcOpMode extends LinearOpMode implements TrcRobot.RobotMo
         }
         startMode();
 
-        long nextPeriodTime = TrcUtil.getCurrentTimeMillis();
+        long nextPeriodNanoTime = TrcUtil.getCurrentTimeNanos();
+        long startNanoTime = TrcUtil.getCurrentTimeNanos();
+
+        loopCounter = 0;
         while (opModeIsActive())
         {
-            loopStartTime = TrcUtil.getCurrentTime();
-            opModeElapsedTime = loopStartTime - opModeStartTime;
+            loopStartNanoTime = TrcUtil.getCurrentTimeNanos();
+            sdkTotalNanoTime += loopStartNanoTime - startNanoTime;
+            loopCounter++;
+            opModeElapsedTime = (loopStartNanoTime - opModeStartNanoTime)/1000000000.0;
 
             if (debugEnabled)
             {
@@ -332,7 +351,10 @@ public abstract class FtcOpMode extends LinearOpMode implements TrcRobot.RobotMo
             {
                 dbgTrace.traceInfo(funcName, "Running runContinuous ...");
             }
+            startNanoTime = TrcUtil.getCurrentTimeNanos();
             runContinuous(opModeElapsedTime);
+            continuousTotalNanoTime += TrcUtil.getCurrentTimeNanos() - startNanoTime;
+            continuousTimeSlotCount++;
 
             if (debugEnabled)
             {
@@ -340,10 +362,10 @@ public abstract class FtcOpMode extends LinearOpMode implements TrcRobot.RobotMo
             }
             taskMgr.executeTaskType(TrcTaskMgr.TaskType.POSTCONTINUOUS_TASK, runMode);
 
-            if (TrcUtil.getCurrentTimeMillis() >= nextPeriodTime)
+            if (TrcUtil.getCurrentTimeNanos() >= nextPeriodNanoTime)
             {
                 dashboard.displayPrintf(0, "%s: %.3f", opModeName, opModeElapsedTime);
-                nextPeriodTime += LOOP_PERIOD;
+                nextPeriodNanoTime += LOOP_PERIOD_NANO;
 
                 if (debugEnabled)
                 {
@@ -355,7 +377,10 @@ public abstract class FtcOpMode extends LinearOpMode implements TrcRobot.RobotMo
                 {
                     dbgTrace.traceInfo(funcName, "Running runPeriodic ...");
                 }
+                startNanoTime = TrcUtil.getCurrentTimeNanos();
                 runPeriodic(opModeElapsedTime);
+                periodicTotalNanoTime += TrcUtil.getCurrentTimeNanos() - startNanoTime;
+                periodicTimeSlotCount++;
 
                 if (debugEnabled)
                 {
@@ -364,6 +389,8 @@ public abstract class FtcOpMode extends LinearOpMode implements TrcRobot.RobotMo
 
                 taskMgr.executeTaskType(TrcTaskMgr.TaskType.POSTPERIODIC_TASK, runMode);
             }
+
+            startNanoTime = TrcUtil.getCurrentTimeNanos();
         }
 
         if (debugEnabled)
@@ -378,6 +405,23 @@ public abstract class FtcOpMode extends LinearOpMode implements TrcRobot.RobotMo
         }
         taskMgr.executeTaskType(TrcTaskMgr.TaskType.STOP_TASK, runMode);
     }   //runOpMode
+
+    /**
+     * This method prints the performance metrics of all loops and taska.
+     *
+     * @param tracer specifies the tracer to be used for printing the performance metrics.
+     */
+    public void printPerformanceMetrics(TrcDbgTrace tracer)
+    {
+        tracer.traceInfo(
+                moduleName,
+                "%16s: Periodic=%.6f, Continuous=%.6f, SDK=%.6f",
+                opModeName,
+                (double)periodicTotalNanoTime/periodicTimeSlotCount/1000000000,
+                (double)continuousTotalNanoTime/continuousTimeSlotCount/1000000000,
+                (double)sdkTotalNanoTime/loopCounter/1000000000);
+        taskMgr.printTaskPerformanceMetrics(tracer);
+    }   //printPerformanceMetrics
 
     /**
      * This method is called periodically after initRobot() is called but before competition starts. Typically,

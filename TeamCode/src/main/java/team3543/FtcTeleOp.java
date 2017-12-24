@@ -27,10 +27,11 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import ftclib.FtcGamepad;
 import ftclib.FtcOpMode;
 import hallib.HalDashboard;
+import trclib.TrcGameController;
 import trclib.TrcRobot;
 
 @TeleOp(name="TeleOp", group="3543TeleOp")
-public class FtcTeleOp extends FtcOpMode implements FtcGamepad.ButtonHandler
+public class FtcTeleOp extends FtcOpMode implements TrcGameController.ButtonHandler
 {
     private enum DriveMode
     {
@@ -41,8 +42,8 @@ public class FtcTeleOp extends FtcOpMode implements FtcGamepad.ButtonHandler
     protected HalDashboard dashboard;
     protected Robot robot;
 
-    FtcGamepad driverGamepad;
-    private FtcGamepad operatorGamepad;
+    protected FtcGamepad driverGamepad;
+    protected FtcGamepad operatorGamepad;
 
     private double drivePowerScale = 1.0;
     private boolean invertedDrive = false;
@@ -78,19 +79,13 @@ public class FtcTeleOp extends FtcOpMode implements FtcGamepad.ButtonHandler
     {
         dashboard.clearDisplay();
         robot.startMode(TrcRobot.RunMode.TELEOP_MODE);
-        //
-        // There is an issue with the gamepad objects that may not be valid
-        // before waitForStart() is called. So we call the setGamepad method
-        // here to update their references in case they have changed.
-        //
-        driverGamepad.setGamepad(gamepad1);
-        operatorGamepad.setGamepad(gamepad2);
     }   //startMode
 
     @Override
     public void stopMode()
     {
         robot.stopMode(TrcRobot.RunMode.TELEOP_MODE);
+        printPerformanceMetrics(robot.tracer);
     }   //stopMode
 
     @Override
@@ -105,32 +100,46 @@ public class FtcTeleOp extends FtcOpMode implements FtcGamepad.ButtonHandler
                 double leftPower = driverGamepad.getLeftStickY(true)*drivePowerScale;
                 double rightPower = driverGamepad.getRightStickY(true)*drivePowerScale;
                 robot.driveBase.tankDrive(leftPower, rightPower, invertedDrive);
-                dashboard.displayPrintf(1, "Tank:left=%.2f,right=%.2f,inverted=%s",
+                dashboard.displayPrintf(1, "Tank:left=%.1f,right=%.1f,inv=%s",
                                         leftPower, rightPower, Boolean.toString(invertedDrive));
                 break;
 
             case MECANUM_MODE:
                 double x = driverGamepad.getLeftStickX(true)*drivePowerScale;
                 double y = driverGamepad.getRightStickY(true)*drivePowerScale;
-                double rot = (driverGamepad.getRightTrigger(true) - driverGamepad.getLeftTrigger(true))*drivePowerScale;
+                double rot = (driverGamepad.getRightTrigger(true) -
+                              driverGamepad.getLeftTrigger(true))*drivePowerScale;
                 robot.driveBase.mecanumDrive_Cartesian(x, y, rot, invertedDrive);
-                dashboard.displayPrintf(1, "Mecanum:x=%.2f,y=%.2f,rot=%.2f,inverted=%s",
+                dashboard.displayPrintf(1, "Mecan:x=%.1f,y=%.1f,rot=%.1f,inv=%s",
                                         x, y, rot, Boolean.toString(invertedDrive));
                 break;
         }
+
+        double glyphElevatorPower = operatorGamepad.getRightStickY(true);
+        double relicElbowPower = operatorGamepad.getLeftStickY(true);
+        double relicExtenderPower =
+                operatorGamepad.getRightTrigger(true) - operatorGamepad.getLeftTrigger(true);
+
+        robot.glyphElevator.setPower(glyphElevatorPower);
+        robot.relicArm.elbow.setPower(relicElbowPower);
+        robot.relicArm.extender.setPower(relicExtenderPower);
+
         dashboard.displayPrintf(2, "xPos=%.2f,yPos=%.2f,heading=%.2f",
-                                robot.driveBase.getXPosition(), robot.driveBase.getYPosition(),
-                                robot.driveBase.getHeading());
+                robot.driveBase.getXPosition(),
+                robot.driveBase.getYPosition(),
+                robot.driveBase.getHeading());
     }   //runPeriodic
 
+
     //
-    // Implements FtcGamepad.ButtonHandler interface.
+    // Implements TrcGameController.ButtonHandler interface.
     //
 
     @Override
-    public void gamepadButtonEvent(FtcGamepad gamepad, int button, boolean pressed)
+    public void buttonEvent(TrcGameController gamepad, int button, boolean pressed)
     {
-        dashboard.displayPrintf(7, "%s: %04x->%s", gamepad.toString(), button, pressed? "Pressed": "Released");
+        dashboard.displayPrintf(
+                7, "%s: %04x->%s", gamepad.toString(), button, pressed? "Pressed": "Released");
         if (gamepad == driverGamepad)
         {
             switch (button)
@@ -165,27 +174,39 @@ public class FtcTeleOp extends FtcOpMode implements FtcGamepad.ButtonHandler
             switch (button)
             {
                 case FtcGamepad.GAMEPAD_A:
+                    if (pressed)
+                    {
+                        robot.glyphGrabber.close();
+                    }
                     break;
 
                 case FtcGamepad.GAMEPAD_B:
+                    if (pressed)
+                    {
+                        robot.glyphGrabber.open();
+                    }
                     break;
 
                 case FtcGamepad.GAMEPAD_X:
+                    if (pressed)
+                    {
+                        robot.relicArm.grabber.setPosition(RobotInfo.RELIC_GRABBER_CLOSE);
+                    }
                     break;
 
                 case FtcGamepad.GAMEPAD_Y:
+                    if (pressed)
+                    {
+                        robot.relicArm.grabber.setPosition(RobotInfo.RELIC_GRABBER_OPEN);
+                    }
                     break;
 
                 case FtcGamepad.GAMEPAD_LBUMPER:
+                    //robot.relicArm.elbow.setManualOverride(pressed);
                     break;
 
                 case FtcGamepad.GAMEPAD_RBUMPER:
-                    break;
-
-                case FtcGamepad.GAMEPAD_BACK:
-                    break;
-
-                case FtcGamepad.GAMEPAD_START:
+                    robot.glyphElevator.setManualOverride(pressed);
                     break;
 
                 case FtcGamepad.GAMEPAD_DPAD_UP:
@@ -198,15 +219,23 @@ public class FtcTeleOp extends FtcOpMode implements FtcGamepad.ButtonHandler
                     break;
 
                 case FtcGamepad.GAMEPAD_DPAD_RIGHT:
-                    /*
+                    break;
+
+                case FtcGamepad.GAMEPAD_BACK:
                     if (pressed)
                     {
-                        robot.shooter.fireContinuous(true);
+                        robot.relicArm.elbow.zeroCalibrate(RobotInfo.RELIC_ELBOW_CAL_POWER);
                     }
-                    */
+                    break;
+
+                case FtcGamepad.GAMEPAD_START:
+                    if (pressed)
+                    {
+                        robot.glyphElevator.zeroCalibrate();
+                    }
                     break;
             }
         }
-    }   //gamepadButtonEvent
+    }   //buttonEvent
 
 }   //class FtcTeleOp

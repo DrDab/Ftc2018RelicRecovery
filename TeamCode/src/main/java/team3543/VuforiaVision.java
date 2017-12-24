@@ -36,8 +36,12 @@ import ftclib.FtcVuforia;
 
 public class VuforiaVision
 {
+    private static final int IMAGE_WIDTH = 640;
+    private static final int IMAGE_HEIGHT = 480;
+    private static final int FRAME_QUEUE_CAPACITY = 2;
+
     private Robot robot;
-    private FtcVuforia vuforia;
+    public FtcVuforia vuforia;
 
     public VuforiaVision(Robot robot, int cameraViewId)
     {
@@ -46,12 +50,13 @@ public class VuforiaVision
                 "/x8Y3jfOZdjMFs0CQSQOEyWv3xfJsdSmevXDQDQr+4KI31HY2YSf/KB/kyxfuRMk4Pi+vWS+oLl65o7sWPiyFgzoM74ENyb" +
                 "j4FgteD/2b6B+UFuwkHWKBNpp18wrpkaiFfr/FCbRFcdWP5mrjlEZM6eOj171dybw97HPeZbGihnnxOeeUv075O7P167AVq" +
                 "aiPy2eRK7OCubR32KXOqQKoyF6AXp+qu2cOTApXS5dqOOseEm+HE4eMF0S2Pld3i5AWBIR+JlPXDuc9LwoH2Q8iDwUK1+4g";
-        final VuforiaLocalizer.CameraDirection CAMERA_DIR = VuforiaLocalizer.CameraDirection.FRONT;
+        final VuforiaLocalizer.CameraDirection CAMERA_DIR = VuforiaLocalizer.CameraDirection.BACK;
         final String TRACKABLES_FILE = "RelicVuMark";
 
         this.robot = robot;
         vuforia = new FtcVuforia(VUFORIA_LICENSE_KEY, cameraViewId, CAMERA_DIR, TRACKABLES_FILE, 1);
         vuforia.setTargetInfo(0, "relicVuMarkTemplate");
+        vuforia.configVideoSource(IMAGE_WIDTH, IMAGE_HEIGHT, FRAME_QUEUE_CAPACITY);
     }   //VuforiaVision
 
     public void setEnabled(boolean enabled)
@@ -76,16 +81,11 @@ public class VuforiaVision
             if (pose != null)
             {
                 targetPos = pose.getTranslation();
-                robot.dashboard.displayPrintf(2, "%s: x=%6.2f,y=%6.2f,z=%6.2f",
-                                              vuMark.toString(),
-                                              targetPos.get(0)/RobotInfo.MM_PER_INCH,
-                                              targetPos.get(1)/RobotInfo.MM_PER_INCH,
-                                              targetPos.get(2)/RobotInfo.MM_PER_INCH);
                 robot.tracer.traceInfo("TargetPos", "%s: x=%6.2f, y=%6.2f, z=%6.2f",
                                        vuMark.toString(),
                                        targetPos.get(0)/RobotInfo.MM_PER_INCH,
                                        targetPos.get(1)/RobotInfo.MM_PER_INCH,
-                                       targetPos.get(2)/RobotInfo.MM_PER_INCH);
+                                       -targetPos.get(2)/RobotInfo.MM_PER_INCH);
             }
         }
 
@@ -105,9 +105,6 @@ public class VuforiaVision
             {
                 targetAngle = Orientation.getOrientation(
                         pose, AxesReference.EXTRINSIC, AxesOrder.XYZ, AngleUnit.DEGREES);
-                robot.dashboard.displayPrintf(3, "%s: xRot=%6.2f,yRot=%6.2f,zRot=%6.2f",
-                        vuMark.toString(),
-                        targetAngle.firstAngle, targetAngle.secondAngle, targetAngle.thirdAngle);
                 robot.tracer.traceInfo("TargetRot", "%s: xRot=%6.2f, yRot=%6.2f, zRot=%6.2f",
                         vuMark.toString(),
                         targetAngle.firstAngle, targetAngle.secondAngle, targetAngle.thirdAngle);
